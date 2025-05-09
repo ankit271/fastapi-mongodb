@@ -3,11 +3,15 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import ValidationError
 from pymongo import MongoClient
 from schema.user import User, UserResponse
+from routers import items
 
 app = FastAPI(
     title="Fast API with MongoDB",
     summary="A sample application showing how to use FastAPI to add a ReST API to a MongoDB collection.",
 )
+
+app.include_router(items.router, prefix="/item", tags=["Items"])
+
 db_url: str = os.environ["MONGODB_URL"]
 client: MongoClient = MongoClient(db_url)
 
@@ -111,3 +115,38 @@ async def delete_user(email: str):
     except Exception as err:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail=str(err))
+
+@app.put("/users/", response_model=dict, status_code=status.HTTP_200_OK)
+async def update_user(user: User, email: str):
+    try:
+        user_dict = user.model_dump(by_alias=True)
+        result = db.get_collection("users").update_one(
+            {"email": email},
+            {"$set": user_dict}
+        )
+
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with email {email} not found"
+            )
+
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_304_NOT_MODIFIED,
+                detail="No content modified"
+            )
+
+        return {
+            "status": "success",
+            "message": f"User with email {email} updated successfully"
+        }
+
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(err)
+        )
+
